@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -45,15 +46,16 @@ static void doVarietyDemo();
 static void doSegmentDemo();
 static void doMaskDemo();
 static std::string toSvgString(const QrCode &qr, int border);
+static std::vector<uint8_t> toGrayBitmap(const QrCode &qr, int scale, int border);
 static void printQr(const QrCode &qr);
 
 
 // The main application program.
 int main() {
 	doBasicDemo();
-	doVarietyDemo();
-	doSegmentDemo();
-	doMaskDemo();
+	// doVarietyDemo();
+	// doSegmentDemo();
+	// doMaskDemo();
 	return EXIT_SUCCESS;
 }
 
@@ -61,15 +63,60 @@ int main() {
 
 /*---- Demo suite ----*/
 
+static bool QrCodeToGrayBitmap(const qrcodegen::QrCode &qr, int scale, int border, int maxSize,
+                               std::vector<uint8_t> &bitmap, int *size) {
+    int bufferStride = 0;
+    int leftBorder = 0; // left and top border
+    int rightBorder = 0; // right and bottom border
+    int qrSize = qr.getSize() * scale;
+    if (maxSize == 0) {
+        leftBorder = border + 50;
+        rightBorder = leftBorder;
+        bufferStride = qrSize + leftBorder + rightBorder;
+    }
+    else if (qrSize < maxSize) {
+        bufferStride = maxSize;
+        int totalBorder = bufferStride - qrSize;
+        leftBorder = totalBorder / 2;
+        rightBorder = totalBorder - leftBorder;
+    }
+    else {
+        // LOG(ERROR) << "qrcode require size: " << qrSize << ", currently max size: " << maxSize;
+        return false;
+    }
+    bitmap.resize(bufferStride * bufferStride);
+    for (int y = 0; y < bufferStride; y++) {
+        for (int x = 0; x < bufferStride; x++) {
+            bool color = (y < leftBorder || y >= leftBorder + qrSize || x < leftBorder || x >= leftBorder + qrSize) ?
+                false : qr.getModule((x - leftBorder) / scale, (y - leftBorder) / scale);
+            bitmap[y * bufferStride + x] = color ? 255 : 0;
+        }
+    }
+    *size = bufferStride;
+    return true;
+}
+
+
 // Creates a single QR Code, then prints it to the console.
 static void doBasicDemo() {
-	const char *text = "Hello, world!";              // User-supplied text
+	// const char *text = "Hello, world!";              // User-supplied text
+	const char *text = "0";              // User-supplied text
 	const QrCode::Ecc errCorLvl = QrCode::Ecc::LOW;  // Error correction level
 	
 	// Make and print the QR Code symbol
 	const QrCode qr = QrCode::encodeText(text, errCorLvl);
-	printQr(qr);
-	std::cout << toSvgString(qr, 4) << std::endl;
+	// printQr(qr);
+	// std::cout << toSvgString(qr, 4) << std::endl;
+
+	// std::vector<uint8_t> grayBitmap;
+	// int size;
+	// QrCodeToGrayBitmap(qr, 6, 16, 0, grayBitmap, &size);
+	// fprintf(stdout, "size: %d\n", size);
+
+	std::vector<uint8_t> grayBitmap = toGrayBitmap(qr, 6, 16);
+	FILE *fp = fopen("out.gray", "wb");
+	fwrite(grayBitmap.data(), 1, grayBitmap.size(), fp);
+	fclose(fp);
 }
 
 
@@ -216,6 +263,19 @@ static std::string toSvgString(const QrCode &qr, int border) {
 	sb << "\" fill=\"#000000\"/>\n";
 	sb << "</svg>\n";
 	return sb.str();
+}
+
+std::vector<uint8_t> toGrayBitmap(const QrCode &qr, int scale, int border) {
+	int bufferStride = (qr.getSize() + border * 2) * scale;
+	fprintf(stdout, "bitmap size: %dx%d\n", bufferStride, bufferStride);
+	std::vector<uint8_t> bitmap(bufferStride * bufferStride);
+	for (int y = 0; y < bufferStride; y++) {
+		for (int x = 0; x < bufferStride; x++) {
+			bool color = qr.getModule(x / scale - border, y / scale - border);
+			bitmap[y * bufferStride + x] = color ? 0 : 255;
+		}
+	}
+	return bitmap;
 }
 
 
